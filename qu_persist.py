@@ -152,6 +152,23 @@ def _install_systemd():
     return False
 
 
+def _remove_cron():
+    try:
+        current = subprocess.run(
+            ["crontab", "-l"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15
+        ).stdout.decode("utf-8", "replace")
+        lines = [l for l in current.splitlines() if l.strip() and "qu_agent.py" not in l]
+        p = subprocess.run(
+            ["crontab", "-"],
+            input=("\n".join(lines) + "\n").encode() if lines else b"",
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15
+        )
+        return p.returncode == 0
+    except Exception:
+        return False
+
+
 def _cron_line():
     return "@reboot %s %s >/dev/null 2>&1" % (qu_core.python_exe(), qu_core.agent_script())
 
@@ -216,6 +233,85 @@ def _install_task():
 
 
 # --------------------------------------------------------------------------
+# macOS: LaunchAgent (per-user, no admin, no Full Disk Access)
+# --------------------------------------------------------------------------
+
+_LABEL = "com.quickutils.agent"
+
+
+def _is_macos():
+    return sys.platform == "darwin"
+
+
+def _launchd_path():
+    return os.path.join(qu_core.home(), "Library", "LaunchAgents", _LABEL + ".plist")
+
+
+def _plist_xml():
+    def esc(s):
+        return (s.replace("&", "&amp;").replace("<", "&lt;")
+                 .replace(">", "&gt;").replace('"', "&quot;"))
+    exe = esc(qu_core.python_exe())
+    script = esc(qu_core.agent_script())
+    workdir = esc(qu_core.node_dir())
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+        '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+        '<plist version="1.0">\n'
+        '<dict>\n'
+        '  <key>Label</key><string>%s</string>\n'
+        '  <key>ProgramArguments</key>\n'
+        '  <array>\n'
+        '    <string>%s</string>\n'
+        '    <string>%s</string>\n'
+        '  </array>\n'
+        '  <key>WorkingDirectory</key><string>%s</string>\n'
+        '  <key>RunAtLoad</key><true/>\n'
+        '  <key>KeepAlive</key><true/>\n'
+        '  <key>ThrottleInterval</key><integer>15</integer>\n'
+        '  <key>ProcessType</key><string>Background</string>\n'
+        '  <key>StandardOutPath</key><string>/dev/null</string>\n'
+        '  <key>StandardErrorPath</key><string>/dev/null</string>\n'
+        '</dict>\n'
+        '</plist>\n'
+    ) % (_LABEL, exe, script, workdir)
+
+
+def _launchd_domain():
+    uid = os.getuid() if hasattr(os, "getuid") else 0
+    return "gui/%d" % uid
+
+
+def _launchd_load(path):
+    """Load the agent, trying the modern API then the legacy one."""
+    domain = _launchd_domain()
+    if _run_quiet(["launchctl", "bootstrap", domain, path], timeout=20):
+        _run_quiet(["launchctl", "enable", "%s/%s" % (domain, _LABEL)], timeout=15)
+        return True
+    # legacy (still works on every macOS release)
+    if _run_quiet(["launchctl", "load", "-w", path], timeout=20):
+        return True
+    return False
+
+
+def _launchd_unload(path):
+    domain = _launchd_domain()
+    _run_quiet(["launchctl", "bootout", "%s/%s" % (domain, _LABEL)], timeout=15)
+    _run_quiet(["launchctl", "bootout", domain, path], timeout=15)
+    _run_quiet(["launchctl", "unload", "-w", path], timeout=15)
+
+
+def _install_launchd():
+    path = _launchd_path()
+    try:
+        _write(path, _plist_xml(), mode=0o644)
+    except Exception:
+        return False
+    return _launchd_load(path)
+
+
+# --------------------------------------------------------------------------
 # public API
 # --------------------------------------------------------------------------
 
@@ -235,6 +331,17 @@ def uninstall():
             _run_quiet(["schtasks", "/Delete", "/F", "/TN", _RUN_NAME])
             return True
 
+        if _is_macos():
+            path = _launchd_path()
+            _launchd_unload(path)
+            try:
+                if os.path.isfile(path):
+                    os.remove(path)
+            except Exception:
+                pass
+            _remove_cron()
+            return True
+
         _run_quiet(["systemctl", "--user", "disable", _UNIT + ".service"])
         _run_quiet(["systemctl", "--user", "stop", _UNIT + ".service"])
         unit = os.path.join(_systemd_dir(), _UNIT + ".service")
@@ -244,20 +351,7 @@ def uninstall():
         except Exception:
             pass
         _run_quiet(["systemctl", "--user", "daemon-reload"])
-
-        try:
-            current = subprocess.run(
-                ["crontab", "-l"],
-                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15
-            ).stdout.decode("utf-8", "replace")
-            lines = [l for l in current.splitlines() if l.strip() and "qu_agent.py" not in l]
-            subprocess.run(
-                ["crontab", "-"],
-                input=("\n".join(lines) + "\n").encode() if lines else b"",
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15
-            )
-        except Exception:
-            pass
+        _remove_cron()
         return True
     except Exception:
         return False
@@ -273,6 +367,17 @@ def install():
             if not is_running():
                 spawn_agent()
             return ok
+
+        if _is_macos():
+            # LaunchAgent is the correct macOS mechanism. cron is only a
+            # safety net for the (unusual) case where launchd refuses.
+            ok = _install_launchd()
+            if not ok:
+                _install_cron()
+            if not is_running():
+                spawn_agent()
+            return ok
+
         ok = _install_systemd()
         _install_cron()
         if not is_running():

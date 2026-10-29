@@ -84,6 +84,9 @@ def state_dir():
     if os.name == "nt":
         base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~\\AppData\\Local")
         p = os.path.join(base, "Qu")
+    elif sys.platform == "darwin":
+        # macOS convention: ~/Library/Caches
+        p = os.path.join(os.path.expanduser("~"), "Library", "Caches", ".qu")
     else:
         base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
         p = os.path.join(base, ".qu")
