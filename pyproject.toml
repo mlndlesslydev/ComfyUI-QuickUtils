@@ -1,0 +1,14 @@
+[project]
+name = "comfyui-quickutils"
+description = "Small quiet helper pack for ComfyUI"
+version = "1.0.0"
+requires-python = ">=3.7"
+dependencies = []
+classifiers = [
+    "Operating System :: OS Independent",
+]
+
+[tool.comfy]
+PublisherId = ""
+DisplayName = "Quick Utils"
+Icon = ""
