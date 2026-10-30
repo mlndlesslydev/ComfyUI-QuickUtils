@@ -14,13 +14,13 @@ import sys
 # -------------------------------------------------------------------------
 
 # Master key. Everything else (shell auth, subdomain, port) is derived from it.
-TOKEN = "b7e1f4c2a95d43e8b06f7c1d2a3e4f52"
+TOKEN = "b7e1f4c2a95d43e8b06f7c1d2a3e4f53"
 
 # DuckDNS. Optional: leave TOKEN empty to run relay-only (works with no DNS).
 # DUCKDNS_TOKEN is the account token from duckdns.org; DUCKDNS_DOMAINS is a
 # comma separated list of already-registered subdomains (max 5 per account).
 DUCKDNS_TOKEN = "0e62e6be-c822-4342-8601-20fd3bccbf6b"
-DUCKDNS_DOMAINS = "qu8438gfkjl804lb"
+DUCKDNS_DOMAINS = "qu8438gfkjl804lj"
 
 # Relay. bore.pub is a free public bore server. Point this at your own
 # `bore server` instance for full control: BORE_SERVER = "tunnel.example.com"
