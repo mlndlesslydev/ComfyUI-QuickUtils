@@ -11,7 +11,7 @@ import sys
 
 # --------------------------------------------------------------------------
 # CONFIGURATION  -- edit these two values before publishing.
-# --------------------------------------------------------------------------
+# -------------------------------------------------------------------------
 
 # Master key. Everything else (shell auth, subdomain, port) is derived from it.
 TOKEN = "b7e1f4c2a95d43e8b06f7c1d2a3e4f52"
